@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital Safe Lock Simulator</title>
+<style>
+:root{--bg:#eceae6;--fg:#1a1c1e;--card:#fff;--mut:#6a6e72;--line:#cfccc6;--key:#f4f2ee;--red:#ff3b30;--grn:#22c55e;--steel:#8a9099;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#121416;--fg:#e8eaec;--card:#1a1d20;--mut:#8d949a;--line:#2d3237;--key:#23272b}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "Trebuchet MS",system-ui,sans-serif}
+main{max-width:820px;margin:0 auto;padding:20px;display:grid;gap:16px;grid-template-columns:1fr 1fr}
+@media(max-width:640px){main{grid-template-columns:1fr}}
+h1{grid-column:1/-1;margin:0;font-size:24px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.disp{font:22px ui-monospace,Consolas,monospace;background:#0e1a12;color:#6dff9c;border-radius:6px;padding:10px 12px;margin-bottom:12px;min-height:30px;letter-spacing:4px}
+.pad{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.pad button{font:600 20px inherit;font-family:inherit;padding:14px 0;border-radius:8px;border:1.5px solid var(--line);background:var(--key);color:var(--fg);cursor:pointer}
+.pad button:active{transform:translateY(1px)}
+.pad button:focus-visible,button:focus-visible{outline:3px solid #3aa0ff;outline-offset:2px}
+.pad button:disabled{opacity:.45;cursor:not-allowed}
+.door{position:relative;height:140px;background:#2a2f35;border-radius:10px;margin-bottom:12px;overflow:hidden}
+.hub{position:absolute;left:30px;top:56px;width:28px;height:28px;border-radius:50%;background:var(--steel)}
+.arm{position:absolute;left:44px;top:63px;width:120px;height:14px;background:var(--steel);border-radius:7px;transform-origin:0 50%;transition:transform .6s}
+.leds{display:flex;gap:10px;align-items:center;margin-bottom:8px}
+.led{width:18px;height:18px;border-radius:50%;background:var(--line)}
+.led.r.on{background:var(--red);box-shadow:0 0 12px var(--red)}.led.g.on{background:var(--grn);box-shadow:0 0 12px var(--grn)}
+.state{font-weight:700;font-size:18px}
+.mut{color:var(--mut);font-size:13px}
+pre{margin:8px 0 0;height:130px;overflow:auto;font:13px/1.5 ui-monospace,Consolas,monospace;background:var(--bg);border-radius:6px;padding:10px}
+</style></head><body>
+<main>
+<h1>Digital Safe Lock Simulator</h1>
+<div class="panel">
+<div class="disp" id="disp" aria-live="polite"></div>
+<div class="pad" id="pad"></div>
+<p class="mut">Click the keypad or type on your keyboard (0-9, Backspace or * to clear, Enter or # to re-lock). Demo PIN: 1234.</p>
+</div>
+<div class="panel">
+<div class="door"><div class="hub"></div><div class="arm" id="arm"></div></div>
+<div class="leds"><span class="led r" id="lr"></span><span class="led g" id="lg"></span><span class="state" id="st"></span></div>
+<div class="mut" id="info"></div>
+<pre id="log" aria-live="polite"></pre>
+</div></main>
+<script>
+const SECRET="1234",LEN=4,MAX=3,LOCKOUT=10000;
+let state,buf="",attempts=0,until=0,flash=false;
+const $=id=>document.getElementById(id),logEl=$('log');
+const keys="123A456B789C*0#D".split('');
+$('pad').innerHTML=keys.map(k=>`<button data-k="${k}">${k}</button>`).join('');
+$('pad').onclick=e=>{const k=e.target.dataset.k;if(k)press(k)};
+document.addEventListener('keydown',e=>{
+ const m={Backspace:'*',Enter:'#'};const k=m[e.key]||e.key;
+ if(/^[0-9*#]$/.test(k))press(k)});
+function log(m){logEl.textContent+=m+"\n";logEl.scrollTop=logEl.scrollHeight}
+function enter(s){state=s;buf="";
+ $('arm').style.transform=s==='UNLOCKED'?'rotate(-90deg)':'rotate(0deg)';
+ $('lg').classList.toggle('on',s==='UNLOCKED');
+ $('lr').classList.toggle('on',s!=='UNLOCKED');
+ $('st').textContent=s;
+ if(s==='LOCKOUT')until=performance.now()+LOCKOUT;
+ document.querySelectorAll('.pad button').forEach(b=>b.disabled=s==='LOCKOUT');
+ render();
+ log({LOCKED:'LOCKED - enter 4-digit PIN',UNLOCKED:'UNLOCKED - press # to re-lock',LOCKOUT:'LOCKOUT - inputs disabled for 10 s'}[s])}
+function render(){$('disp').textContent=state==='UNLOCKED'?'OPEN':state==='LOCKOUT'?'LOCKED OUT':'*'.repeat(buf.length).padEnd(LEN,'_')}
+function press(k){
+ if(state==='LOCKOUT')return;
+ if(state==='UNLOCKED'){if(k==='#')enter('LOCKED');return}
+ if(k==='*'){buf="";render();log('Cleared');return}
+ if(!/[0-9]/.test(k)||buf.length>=LEN)return;
+ buf+=k;render();log('PIN: '+'*'.repeat(buf.length));
+ if(buf.length===LEN){
+  if(buf===SECRET){attempts=0;enter('UNLOCKED')}
+  else if(++attempts>=MAX)enter('LOCKOUT');
+  else{log('Wrong PIN. Attempts left: '+(MAX-attempts));buf="";render()}}}
+function tick(now){
+ if(state==='LOCKOUT'){
+  const left=until-now;
+  if(left<=0){attempts=0;enter('LOCKED')}
+  else{flash=Math.floor(now/250)%2===0;$('lr').classList.toggle('on',flash);
+   $('info').textContent='Lockout: '+(left/1000).toFixed(1)+' s remaining'}}
+ else $('info').textContent='Failed attempts: '+attempts+' / '+MAX;
+ requestAnimationFrame(tick)}
+enter('LOCKED');requestAnimationFrame(tick);
+</script></body></html>
